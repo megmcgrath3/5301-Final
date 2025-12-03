@@ -1,0 +1,192 @@
+---
+title: "Covid-19 Data Report"
+author: "Meg McGrath"
+date: "2025-11-15"
+output:
+  html_document: default
+  pdf_document: default
+---
+This project will use data from John Hopkins, available on Github. It includes reported COVID cases and deaths worldwide. The database also includes some information that we will not be using for this report, for example latitude and longitude.  
+This project will also use population estimates from database.earth.  
+We will look at the data from the US compared to four other countries: Germany, Brazil, India, and Russia. While obviously not a complete worldview of the impacts of the pandemic, this selection of countries provides variety without overloading our analysis by looking at data from too many countries at once. By looking at the COVID data from these five countries, we will examine whether they had similar or different experiences with COVID cases and deaths, and whether any one country was possibly more successful in managing the pandemic.  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(scales)
+library(broom)
+```
+
+```{r}
+# import data
+global_cases <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
+global_deaths <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
+```
+```{r}
+# take a look at data
+head(global_cases)
+```
+```{r}
+# clean data, changing dates to rows
+
+global_cases_long <- global_cases %>% 
+  pivot_longer(
+    cols = matches("^\\d{1,2}/\\d{1,2}/\\d{2}$"),
+    names_to = "date",
+    values_to = "cases"
+  ) %>% 
+  mutate(date = as.Date(date, format = "%m/%d/%y"))
+
+global_deaths_long <- global_deaths %>% 
+    pivot_longer(
+    cols = matches("^\\d{1,2}/\\d{1,2}/\\d{2}$"),
+    names_to = "date",
+    values_to = "deaths"
+  ) %>% 
+  mutate(date = as.Date(date, format = "%m/%d/%y"))
+```
+
+```{r}
+# continue to clean data, want to view only date, location, and totals
+
+global_cases_clean <- global_cases_long %>% 
+  mutate(country = `Country/Region`) %>% 
+  group_by(country) %>% 
+  select(date, country, cases
+  )
+global_deaths_clean <- global_deaths_long %>% 
+  mutate(country = `Country/Region`) %>% 
+  group_by(country) %>% 
+  select(date, country, deaths
+  )
+
+```
+```{r}
+max(global_cases_clean$date)
+# 2023-03-09
+
+# will use estimates of populations from 2020 from the following database
+# https://database.earth/population/by-country/2020
+
+# choosing 5 countries to compare
+five_countries <- c("US", "India", "Russia", "Germany", "Brazil")
+
+five_global_cases <- global_cases_clean %>% 
+  filter(country %in% five_countries)
+
+five_global_deaths <- global_deaths_clean %>% 
+  filter(country %in% five_countries)
+```
+
+After cleaning all of the data, we will take a look at the cumulative cases for the five selected countries.
+
+```{r}
+
+ggplot(five_global_cases, aes(x = date, y = cases, color = country)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "COVID-19 Cumulative Cases for 5 Countries",
+    x = "Date",
+    y = "Count"
+  ) +
+  scale_color_manual(values = c(
+    "US" = "blue", 
+    "India" = "red",
+    "Russia" = "pink",
+    "Germany" = "purple",
+    "Brazil" = "orange"
+    )) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+```
+
+Looking at cumulative cases, we can see that the US has more than double of any of the other countries. But we also know that this data does not tell us much if we do not take into consideration the population size of each country.
+
+Next, we will create two separate visuals for cumulative cases and cumulative deaths per 100,000 people, each based on the respective country's population. We will include linear regression models, to see if the data consistently follows a linear trend.
+
+```{r}
+population <- tibble(
+  country = c("US", "Germany", "India", "Brazil", "Russia"),
+  population = c(339436159, 83628708, 1402617695, 208660842, 146371298)
+)
+
+five_global_cases <- five_global_cases %>%
+  left_join(population, by = "country")
+
+five_global_deaths <- five_global_deaths %>% 
+  left_join(population, by = "country")
+
+```
+
+```{r}
+# mutate data to look at cases and deaths per 100k based on countries population
+
+cases_per_100k <-  five_global_cases %>% 
+  mutate(
+    cases_per_100k = (cases * 100000 / population)
+  )
+
+deaths_per_100k <-  five_global_deaths %>% 
+  mutate(
+    deaths_per_100k = (deaths * 100000 / population)
+  )
+```
+
+```{r}
+ggplot(cases_per_100k, aes(x = date, y = cases_per_100k, color = country)) +
+  geom_line(linewidth = 1) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1, linetype = "dashed") +
+  labs(
+    title = "COVID-19 Cumulative Cases per 100k",
+    x = "Date",
+    y = "Count"
+  ) +
+  scale_color_manual(values = c(
+    "US" = "blue", 
+    "India" = "red",
+    "Russia" = "pink",
+    "Germany" = "purple",
+    "Brazil" = "orange"
+    )) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+```
+India is extremely low, almost non-existent. Brazil and Russia are relatively close to each other. The US is double Russia, and Germany is triple Russia.  
+This data may tell us more about each country's data collection and COVID case reporting than it tells us about the spread of COVID in the country.  
+We could expect some variance in case totals from country to country due to factors like the prevalence of international travel, the efficiency of the government to communicate preventative measures, or the availability of vaccines. But this extreme difference between the five countries suggests biases in the data. Perhaps countries like India had much less availability of tests, therefore less case totals were reported or recorded.  
+The five countries do stay fairly close to the linear regression models, suggesting that reported case rates stayed relatively consistent. We can see some variations from these models, which could likely be attributed to causes like vaccine roll outs or new variants.
+
+
+```{r}
+ggplot(deaths_per_100k, aes(x = date, y = deaths_per_100k, color = country)) +
+  geom_line(linewidth = 1) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1, linetype = "dashed") +
+  labs(
+    title = "COVID-19 Cumulative Deaths per 100k for 5 Countries",
+    x = "Date",
+    y = "Count"
+  ) +
+  scale_color_manual(values = c(
+    "US" = "blue", 
+    "India" = "red",
+    "Russia" = "pink",
+    "Germany" = "purple",
+    "Brazil" = "orange"
+    )) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+```
+We would expect less bias in this data. While illness from COVID may be commonly unreported, deaths would likely still be recorded.But this data collection does still depend on how causes of death are attributed and reported in each country, so there is still a lot room for bias. Without testing, COVID tests could be attributed to another number of illnesses. Some countries may have also been motivated to keep their reported numbers low for political reasons.   
+All countries were somewhat close to their linear regression models. Each country at the end of the data set does appear to be slowing in cumulative deaths, each finishing with trends lower than their respective linear regression models, suggesting that new cases were slowing everywhere.  
+Once again, India is shockingly low. We could attribute this partially to a tangible reason, like a possible lack of travel between other countries. If less people are mobile, less disease would spread. The more likely explanation may be that many COVID deaths were missed. Deaths may have been attributed to other similar causes like the flu or pneumonia. This could make it seem as though India was less affected by COVID, when really they were just monitoring it in a different way.  
+Looking at the other four countries, Germany is significantly lower than Russia, the US and Brazil. It would be worth examining other factors like population age, availability of vaccines, and average distance to hospitals.
+There could still be problems with biases in data collection, but Germany may have had successful practices that would be worth studying, so that we could better prepare strategies for the next possible global pandemic.
+
+```{r}
+sessionInfo()
+```
+
