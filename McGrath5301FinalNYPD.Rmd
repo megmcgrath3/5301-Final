@@ -1,0 +1,163 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "Meg McGrath"
+date: "2025-11-15"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+This project will use data that comes directly from the NYPD, reviewed by the Office of Management and Planning. It is a collection of information on all shooting incidents in NYC from 2006 to 2024.  
+We will take a look at the trends of incidents based on the time of year, as well as the overall trends from year to year.
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+# read in data
+
+nypd_shootings <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+
+```{r}
+# summarize data
+# look at number of rows, columns, variables
+# look at summary of each variable
+
+glimpse(nypd_shootings)
+```
+There are 29,744 rows representing 29,744 separate incidents. There are 21 columns representing information about each incident including information about the location, the perpetrator and the victim.  
+For the sake of this report, we only care about the month and year of the indcident occurence.
+
+
+```{r}
+# clean data
+# change OCCUR_DATE from chr to date
+# create month and hour variable for future analysis
+# select desired variables
+
+nypd_clean <- nypd_shootings %>%
+  mutate(
+    occur_date = mdy(OCCUR_DATE),
+    occur_month = month(occur_date),
+  ) %>% 
+  select(
+    occur_date, occur_month
+  )
+```
+
+It is worth noting that there were some missing data points in most categories, sometimes marked as UNKNOWN, NA or (null). However there are no missing data points for dates, so we do not need to account for how to manage missing data.
+
+```{r}
+# look at shootings by month
+# group and total by month
+# create visual
+
+shootings_by_month <- nypd_clean %>% 
+  group_by(occur_month) %>% 
+  summarise(total_shootings = n())
+
+ggplot(shootings_by_month, aes(x = occur_month, y = total_shootings)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 2) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  labs(
+    title = "NYC Shootings by Month (2006 to 2024)",
+    x = "Month",
+    y = "Number of Shootings"
+  ) +
+  theme_light()
+```
+Looking at shootings per month, there is a clear trend that increases during summer months, peaking in July, and decreases during winter months, hitting the lowest point in February.   
+This is likely due to the number of people outside and interacting during warmer weather. With more people, there are likely more interactions between people, more crimes of opportunity, more personal conflicts, and unfortunately more shooting incidents.  
+There is little room for bias in this analysis, due to the fact that there is no missing data and dates of incidents are not open to interpretation.  
+However, we could check for possible outliers that could be skewing the data. We will address this by separating the data by year.
+
+```{r, message = FALSE}
+# summarise data by month and year
+# create visual
+
+month_year <- nypd_clean %>% 
+  group_by(year = year(occur_date), month = month(occur_month)) %>% 
+  summarise(total_shootings = n())
+
+ggplot(month_year, aes(x = month, y = total_shootings, group = year, color = factor(year))) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  labs(
+    title = "NYC Shootings by Month",
+    x = "Month",
+    y = "Number of Shootings"
+  ) +
+  theme_light()
+
+
+```
+Separating the data by month and year, the trends are less obvious, but we still see similar trends of more NYC shooting incidents during summer months than winter months, confirming our previous analysis.  
+This information could be used by the NYPD in training, to make officers aware of higher risks during certain months.  
+This information could also be used to inform communities of the higher risk of gun violence during certain times of year.
+
+Next, we will look at the shooting incident trends from year to year.
+
+
+```{r}
+# summarise data by year
+
+shootings_by_year <- nypd_clean %>% 
+  group_by(year = year(occur_date)) %>% 
+  summarise(total_shootings = n())
+
+ggplot(shootings_by_year, aes(x = year, y = total_shootings)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 2) +
+  scale_x_continuous(breaks = seq(2006,2024, by = 3)) +
+  labs(
+    title = "NYC Shootings by Year",
+    x = "Year",
+    y = "Number of Shootings"
+  ) +
+  theme_light()
+
+```
+
+There was a significant downward trend from 2011 to 2019, then a huge spike in 2020.   
+This seems to contradict our conclusions from our analysis of monthly trends, that more people remaining in their homes during colder weather led to less shootings. Following this same logic, the COVID shutdown in 2020 should have led to less shootings.  
+But we can account for this spike without discarding our previous conclusions. The Black Lives Matter protests following the death of George FLoyd also occured in 2020, and this led to increased tensions, especially between communities and their police departments. This is the most likely cause of the major spike in shootings in 2020 and 2021.   
+We can see from our analysis that from 2022 to 2024, the number of shootings have continued to drop, similar to the previous drop beginning in 2011.
+
+Next, we will add a linear regression model to our year by year visual.
+
+```{r, message = FALSE}
+# create linear regression model and plot
+
+year_model <- lm(total_shootings ~ year, data = shootings_by_year)
+summary(year_model)
+
+ggplot(shootings_by_year, aes(x = year, y = total_shootings)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", linetype = "dashed") +
+  scale_x_continuous(breaks = seq(2006,2024, by = 3)) +
+  labs(
+    title = "NYC Shootings by Year",
+    x = "Year",
+    y = "Number of Shootings"
+  ) +
+  theme_light()
+```
+Adding a linear regression model to the data shows an overall downward trend in NYC shooting incidents. The model has limitations. The major spike in 2020 does not fit the model, nor does the more rapid decline from 2011 to 2019.
+
+Yet looking at how the data fits the model over the entire time period, it appears that shooting incidents have once again returned to a decreasing rate similar to the beginning of the analysis, meaning that the city has recovered from the huge disruption of 2020 and 2021.
+
+We could conclude that the police departments play a large role in the level of overall gun violence, since gun violence sky-rocketed in 2020 and 2021 when the NYPD was struggling with community support.  
+But it is also a possibility that the drop in gun violence had nothing to do with NYPD, but rather something else, like more community outreach programs.  
+Either conclusion, without further evidence, could be considered an example of bias in data analysis.
+
+This report simply shows that gun violence is trending downwards in NYC. We can see the effect, but not necessarily the cause. However, this report does demonstrate that it would be valuable to do continued research into what factors are aiding these downward trends. It is likely a combination of many things, including better police department support and more community outreach programs. It would be worthwhile to further examine the factors that are supporting this downward trend in gun violence in NYC, and how we could replicate these practices in other cities.
+
+```{r}
+sessionInfo()
+```
+
